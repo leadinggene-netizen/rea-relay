@@ -33,6 +33,7 @@ func main() {
 		SubscriptionID: "sub-demo",
 		SymbolTable: map[string]connection.BrokerSymbolSpec{
 			"XAUUSD": {BrokerSymbol: "XAUUSD", PipSize: 0.1, PipValuePerLot: 1.0, LotMin: 0.01, LotMax: 100, LotStep: 0.01},
+			"BTCUSD": {BrokerSymbol: "BTCUSD", PipSize: 1.0, PipValuePerLot: 1.0, LotMin: 0.01, LotMax: 100, LotStep: 0.01},
 		},
 		Accounts: []connection.Account{{ID: "acct-1", Broker: "demo", Mode: "demo", Equity: 10000}},
 	}
@@ -40,6 +41,7 @@ func main() {
 
 	quotes := risk.MapQuoteSource{
 		"XAUUSD": {Bid: 2400.0, Ask: 2400.2, Spread: 0.2},
+		"BTCUSD": {Bid: 95000.0, Ask: 95050.0, Spread: 50.0},
 	}
 
 	audit := relay.NewAuditLog()
