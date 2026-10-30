@@ -32,14 +32,14 @@ func main() {
 		Key:            "demo-connection-key",
 		SubscriptionID: "sub-demo",
 		SymbolTable: map[string]connection.BrokerSymbolSpec{
-			"XAUUSD": {BrokerSymbol: "XAUUSD.m", PipSize: 0.1, PipValuePerLot: 1.0, LotMin: 0.01, LotMax: 100, LotStep: 0.01},
+			"XAUUSD": {BrokerSymbol: "XAUUSD", PipSize: 0.1, PipValuePerLot: 1.0, LotMin: 0.01, LotMax: 100, LotStep: 0.01},
 		},
 		Accounts: []connection.Account{{ID: "acct-1", Broker: "demo", Mode: "demo", Equity: 10000}},
 	}
 	store.AddConnection(demo)
 
 	quotes := risk.MapQuoteSource{
-		"XAUUSD.m": {Bid: 2400.0, Ask: 2400.2, Spread: 0.2},
+		"XAUUSD": {Bid: 2400.0, Ask: 2400.2, Spread: 0.2},
 	}
 
 	audit := relay.NewAuditLog()
