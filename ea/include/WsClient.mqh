@@ -109,15 +109,12 @@ bool CWsClient::Connect(const string host, const int port, const string path)
          return false;
       }
       uchar b[];
-      uint avail = SocketTlsReadAvailable(m_sock);
-      if(avail == 0)
+      int got = SocketTlsReadAvailable(m_sock, b, 4096);
+      if(got <= 0)
       {
          Sleep(10);
          continue;
       }
-      int got = SocketTlsRead(m_sock, b, (int)avail, 1000);
-      if(got <= 0)
-         continue;
       resp += CharArrayToString(b, 0, got, CP_UTF8);
    }
    if(StringFind(resp, " 101 ") < 0)
@@ -158,19 +155,8 @@ bool CWsClient::TlsFill(const int want, const uint timeoutMs)
    {
       if(GetTickCount() - start > timeoutMs)
          return false;
-      uint avail = SocketTlsReadAvailable(m_sock);
-      if(avail == 0)
-      {
-         if(!SocketIsConnected(m_sock))
-         {
-            m_connected = false;
-            return false;
-         }
-         Sleep(5);
-         continue;
-      }
       uchar b[];
-      int got = SocketTlsRead(m_sock, b, (int)avail, timeoutMs);
+      int got = SocketTlsReadAvailable(m_sock, b, 4096);
       if(got <= 0)
       {
          if(!SocketIsConnected(m_sock))
@@ -178,6 +164,7 @@ bool CWsClient::TlsFill(const int want, const uint timeoutMs)
             m_connected = false;
             return false;
          }
+         Sleep(5);
          continue;
       }
       int base = ArraySize(m_rxbuf);
@@ -337,6 +324,7 @@ bool CWsClient::ReadText(string &msg, const uint timeoutMs)
          return true;
       }
    }
+   return false; // unreachable (loop only exits via return); satisfies MQL5 control-path analysis
 }
 
 //+------------------------------------------------------------------+
