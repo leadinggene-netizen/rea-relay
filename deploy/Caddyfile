@@ -1,0 +1,18 @@
+# rea-relay — reverse proxy with automatic TLS (Let's Encrypt).
+# The relay binary serves plain HTTP on :8080; the MQL5 EA requires WSS, so TLS
+# is terminated here. Caddy auto-handles the WebSocket upgrade via reverse_proxy.
+#
+# Prerequisites:
+#   1. A domain/subdomain whose A record points at this VPS's public IP.
+#   2. Inbound TCP 80 AND 443 open (80 is needed for the ACME challenge).
+#   3. The relay running locally:  ./relay-linux-amd64 -addr 127.0.0.1:8080
+#
+# Replace relay.example.com below with your real host, then:  caddy run
+
+relay.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080 {
+		# Keep agent WebSocket connections alive (heartbeat is 15s).
+		flush_interval -1
+	}
+}
