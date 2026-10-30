@@ -7,9 +7,9 @@
 #   2. Inbound TCP 80 AND 443 open (80 is needed for the ACME challenge).
 #   3. The relay running locally:  ./relay-linux-amd64 -addr 127.0.0.1:8080
 #
-# Replace relay.example.com below with your real host, then:  caddy run
+# Replace relay.mt5tradebot.com below with your real host, then:  caddy run
 
-relay.example.com {
+relay.mt5tradebot.com {
 	encode gzip
 	reverse_proxy 127.0.0.1:8080 {
 		# Keep agent WebSocket connections alive (heartbeat is 15s).

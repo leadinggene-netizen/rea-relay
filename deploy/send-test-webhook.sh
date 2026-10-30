@@ -2,9 +2,9 @@
 # Fire a single test instruction at the relay's /webhook endpoint.
 # Targets the built-in demo connection (demo-connection-key).
 # Default symbol is BTCUSD (crypto trades 24/7); use XAUUSD when gold is open.
-# Usage:  ./send-test-webhook.sh https://relay.example.com [BTCUSD] [open_long] [0.01]
+# Usage:  ./send-test-webhook.sh https://relay.mt5tradebot.com [BTCUSD] [open_long] [0.01]
 set -euo pipefail
-RELAY="${1:-https://relay.example.com}"
+RELAY="${1:-https://relay.mt5tradebot.com}"
 SYMBOL="${2:-BTCUSD}"
 ACTION="${3:-open_long}"
 LOTS="${4:-0.01}"
