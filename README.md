@@ -20,6 +20,12 @@ delivery layer. All relay stores are in-memory behind interfaces.
 
 Module path: `github.com/leadinggene-netizen/rea-relay` · Go 1.24.
 
+> **Portal / control plane:** the customer-facing SaaS control plane (sign-up,
+> plan selection, tenant dashboard) is a separate Next.js + TypeScript app under
+> [`portal/`](portal/). It is independent of this Go relay and calls the relay's
+> `/admin` API to provision connections. See `portal/README`-level notes in
+> `portal/.env.example` and `portal/prisma/schema.prisma`.
+
 ## Build / test
 
 ```
