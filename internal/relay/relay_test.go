@@ -128,6 +128,29 @@ func TestTC_N1_MarketLongFixedLots(t *testing.T) {
 	}
 }
 
+// Flip: flip_long resolves as a long market entry (sizing applied, SL below /
+// TP above) and the resolved order carries the flip_long action so the agent
+// closes the opposite side before opening.
+func TestFlipLongEntry(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	res := h.r.Process(relay.Request{Body: body(t, map[string]any{
+		"action": "flip_long", "symbol": testSymbol,
+		"sizing":    map[string]any{"mode": "fixed_lots", "value": 0.10},
+		"stop_loss": 20.0, "stop_type": "pips",
+		"take_profit": 40.0, "target_type": "pips",
+	})})
+	if !res.Accepted || res.Overall != delivery.StatusFilled {
+		t.Fatalf("want accepted filled, got accepted=%v overall=%s code=%s", res.Accepted, res.Overall, res.Code)
+	}
+	o, _ := h.agent.LastOrder("acct-1")
+	if string(o.Action) != "flip_long" {
+		t.Fatalf("want flip_long passed to agent, got %q", o.Action)
+	}
+	if o.SLPrice == nil || o.TPPrice == nil || !(*o.SLPrice < 2400.2 && *o.TPPrice > 2400.2) {
+		t.Fatalf("flip_long not resolved as long entry: SL=%v TP=%v", o.SLPrice, o.TPPrice)
+	}
+}
+
 // TC-N2: market short, cash_risk 100, SL 25 pips -> volume so SL loss ~= 100.
 func TestTC_N2_CashRisk(t *testing.T) {
 	h := newHarness(t, harnessOpts{})

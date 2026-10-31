@@ -60,6 +60,7 @@ private:
    ExecResult ModifyStops(const ResolvedOrder &o, bool isLong);
    ExecResult CloseSide(const ResolvedOrder &o, bool isLong, bool partial, bool byVolume);
    ExecResult CloseAll(const ResolvedOrder &o);
+   ExecResult FlipTo(const ResolvedOrder &o, bool isLong);
 
 public:
             CTradeExec() {}
@@ -343,6 +344,8 @@ ExecResult CTradeExec::Execute(const ResolvedOrder &o)
    if(o.action == "open_short")         return OpenMarket(o, false);
    if(o.action == "open_long_pending")  return OpenPending(o, true);
    if(o.action == "open_short_pending") return OpenPending(o, false);
+   if(o.action == "flip_long")          return FlipTo(o, true);
+   if(o.action == "flip_short")         return FlipTo(o, false);
    if(o.action == "modify_stops_long")  return ModifyStops(o, true);
    if(o.action == "modify_stops_short") return ModifyStops(o, false);
    if(o.action == "close_long")         return CloseSide(o, true,  false, false);
@@ -357,6 +360,17 @@ ExecResult CTradeExec::Execute(const ResolvedOrder &o)
    res.status = "no_op";
    res.reasonCode = "no_matching_position";
    return res;
+}
+
+//+------------------------------------------------------------------+
+// FlipTo closes any open position on the opposite side of the symbol, then
+// opens a fresh market position on the requested side. Closing the opposite
+// side is best-effort (a no-op if nothing is open); the open is the reported
+// outcome, so the EA returns a clean fill even on the first signal.
+ExecResult CTradeExec::FlipTo(const ResolvedOrder &o, const bool isLong)
+{
+   CloseSide(o, !isLong, false, false);   // flip_long closes shorts; flip_short closes longs
+   return OpenMarket(o, isLong);
 }
 
 #endif // REA_TRADEEXEC_MQH
