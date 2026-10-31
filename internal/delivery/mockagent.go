@@ -147,6 +147,17 @@ func (m *MockAgent) execute(accountID string, order ResolvedOrder) AccountResult
 		initial["short"] = order.Lots
 		return AccountResult{AccountID: accountID, Status: StatusFilled, FinalVolume: order.Lots}
 
+	case instruction.FlipLong:
+		sides["short"] = 0 // close opposite side, then open
+		sides["long"] += order.Lots
+		initial["long"] = order.Lots
+		return AccountResult{AccountID: accountID, Status: StatusFilled, FinalVolume: order.Lots}
+	case instruction.FlipShort:
+		sides["long"] = 0 // close opposite side, then open
+		sides["short"] += order.Lots
+		initial["short"] = order.Lots
+		return AccountResult{AccountID: accountID, Status: StatusFilled, FinalVolume: order.Lots}
+
 	case instruction.ModifyStopsLong:
 		return m.modify(accountID, sides, "long")
 	case instruction.ModifyStopsShort:

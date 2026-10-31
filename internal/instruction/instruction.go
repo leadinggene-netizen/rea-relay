@@ -33,6 +33,8 @@ const (
 	CloseShortVolume   Action = "close_short_volume"
 	AgentPause         Action = "agent_pause"
 	AgentResume        Action = "agent_resume"
+	FlipLong           Action = "flip_long"  // close opposite side, then open long
+	FlipShort          Action = "flip_short" // close opposite side, then open short
 )
 
 var knownActions = map[Action]bool{
@@ -43,6 +45,7 @@ var knownActions = map[Action]bool{
 	CloseLongPartial: true, CloseShortPartial: true,
 	CloseLongVolume: true, CloseShortVolume: true,
 	AgentPause: true, AgentResume: true,
+	FlipLong: true, FlipShort: true,
 }
 
 // SizingMode selects the server-side volume resolution strategy (spec §3.2, §6).
@@ -151,7 +154,7 @@ const reservedCommentChars = ";|\n\r"
 // IsEntry reports whether the action opens a new position (market or pending).
 func (a Action) IsEntry() bool {
 	switch a {
-	case OpenLong, OpenShort, OpenLongPending, OpenShortPending:
+	case OpenLong, OpenShort, OpenLongPending, OpenShortPending, FlipLong, FlipShort:
 		return true
 	}
 	return false

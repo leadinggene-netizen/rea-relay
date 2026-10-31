@@ -62,7 +62,7 @@ func rerr(c reason.Code) *Error { return &Error{Code: c, Message: c.Message()} }
 func Resolve(in *instruction.Instruction, spec connection.BrokerSymbolSpec, q Quote, balance float64) (Resolution, *Error) {
 	var res Resolution
 
-	isLong := in.Action == instruction.OpenLong || in.Action == instruction.OpenLongPending
+	isLong := in.Action == instruction.OpenLong || in.Action == instruction.OpenLongPending || in.Action == instruction.FlipLong
 	// Entry price: pending uses pending_price; market long uses ask, short bid.
 	entry := q.Ask
 	if !isLong {
