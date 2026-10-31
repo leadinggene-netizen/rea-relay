@@ -51,6 +51,10 @@ type Subscription struct {
 	ID             string
 	Tier           string
 	MaxConnections int
+	// OwnerID scopes the subscription (and its connections) to a tenant/user in
+	// the multi-tenant hosted deployment. Optional: the empty string is the
+	// default and preserves the original single-tenant behavior.
+	OwnerID string
 }
 
 // placeholderKeys are obvious not-yet-replaced values treated as a missing key
@@ -251,4 +255,71 @@ func (s *Store) ConnectedCount(subID string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.connected[subID])
+}
+
+// ConnectionByID returns the connection registered under id, if any. Unlike
+// Lookup (which is keyed by the portable connection key), this is keyed by the
+// stable connection ID used by the admin/provisioning API.
+func (s *Store) ConnectionByID(id string) (*Connection, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.byID[id]
+	return c, ok
+}
+
+// RemoveConnection removes a connection from the live registry by ID, freeing
+// any live connected slot it held and writing the change through to the durable
+// backing (if attached). Removing a connection takes effect immediately: its
+// key no longer authenticates on /webhook or the agent transport. Removing an
+// unknown ID is a no-op.
+func (s *Store) RemoveConnection(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.byID[id]
+	if !ok {
+		return
+	}
+	delete(s.byID, id)
+	delete(s.byKey, c.Key)
+	if set := s.connected[c.SubscriptionID]; set != nil {
+		delete(set, id)
+	}
+	s.persistLocked()
+}
+
+// ListConnections returns a snapshot slice of all registered connections.
+func (s *Store) ListConnections() []*Connection {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Connection, 0, len(s.byID))
+	for _, c := range s.byID {
+		out = append(out, c)
+	}
+	return out
+}
+
+// ListSubscriptions returns a snapshot slice of all registered subscriptions.
+func (s *Store) ListSubscriptions() []*Subscription {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Subscription, 0, len(s.subscriptions))
+	for _, sub := range s.subscriptions {
+		out = append(out, sub)
+	}
+	return out
+}
+
+// CountConnectionsForSubscription returns how many registered connections name
+// the given subscription ID. It counts the registry, not live-connected agents
+// (that is ConnectedCount), and backs the admin API's max_connections check.
+func (s *Store) CountConnectionsForSubscription(subID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, c := range s.byID {
+		if c.SubscriptionID == subID {
+			n++
+		}
+	}
+	return n
 }
