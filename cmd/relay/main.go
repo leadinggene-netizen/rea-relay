@@ -13,9 +13,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
+	"github.com/leadinggene-netizen/rea-relay/internal/adminapi"
 	"github.com/leadinggene-netizen/rea-relay/internal/auth"
 	"github.com/leadinggene-netizen/rea-relay/internal/connection"
 	"github.com/leadinggene-netizen/rea-relay/internal/relay"
@@ -27,6 +29,7 @@ import (
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	dataDir := flag.String("data-dir", "./data", "directory for durable file-backed state")
+	adminToken := flag.String("admin-token", "", "bearer token for the admin provisioning API; if empty (and REA_ADMIN_TOKEN unset) the admin API is disabled")
 	flag.Parse()
 
 	cfg := relay.DefaultConfig()
@@ -85,6 +88,22 @@ func main() {
 		_, _ = io.WriteString(w, "ok")
 	})
 	ts.Routes(mux) // /agent/ws (TR-1..6) and /agent/longpoll (TR-7)
+
+	// Admin provisioning API (multi-tenant hosted SaaS). Enabled ONLY when an
+	// admin token is configured, via -admin-token or REA_ADMIN_TOKEN; otherwise
+	// the /admin routes are never registered. Writes go through the same live
+	// store the relay/transport read from, so provisioned connections take effect
+	// immediately and (with the persister attached) survive a restart.
+	token := *adminToken
+	if token == "" {
+		token = os.Getenv("REA_ADMIN_TOKEN")
+	}
+	if token != "" {
+		adminapi.New(store, token).Register(mux)
+		log.Printf("admin API enabled at /admin/")
+	} else {
+		log.Printf("admin API disabled (no -admin-token / REA_ADMIN_TOKEN)")
+	}
 	mux.HandleFunc("/webhook", func(w http.ResponseWriter, req *http.Request) {
 		if req.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
