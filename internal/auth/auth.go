@@ -87,20 +87,54 @@ func (s *Signer) gc(now time.Time) {
 	}
 }
 
+// DedupPersister is an optional durable backing for a Deduper (FR-4 across
+// restarts). RecordDedup is called write-through the first time a combined key
+// is seen within the window; LoadDedup supplies the surviving entries on
+// startup. It is satisfied by internal/store's file-backed Store. Defined here
+// to keep the dependency direction one-way (store imports auth, not vice versa).
+type DedupPersister interface {
+	LoadDedup() (map[string]time.Time, error)
+	RecordDedup(key string, first time.Time) error
+}
+
 // Deduper suppresses repeat idempotency keys within a window, scoped per
 // connection (FR-4, EC-8). The first sight of a key within the window is
-// "fresh"; repeats are "duplicate".
+// "fresh"; repeats are "duplicate". A Deduper can be made durable by attaching
+// a DedupPersister so a replayed webhook within the window is still suppressed
+// after a process restart.
 type Deduper struct {
 	Window time.Duration
 
-	mu    sync.Mutex
-	seen  map[string]time.Time // connID+"\x00"+key -> first-seen time
-	clock func() time.Time
+	mu      sync.Mutex
+	seen    map[string]time.Time // connID+"\x00"+key -> first-seen time
+	clock   func() time.Time
+	persist DedupPersister
 }
 
 // NewDeduper builds a Deduper with the given suppression window.
 func NewDeduper(window time.Duration) *Deduper {
 	return &Deduper{Window: window, seen: map[string]time.Time{}, clock: time.Now}
+}
+
+// AttachPersister wires a durable backing store into the Deduper: it loads the
+// surviving (non-expired) entries from p into memory and records future fresh
+// keys write-through. Entries older than the window are dropped on load so a
+// stale key does not suppress a legitimate new instruction after a restart.
+func (d *Deduper) AttachPersister(p DedupPersister) error {
+	loaded, err := p.LoadDedup()
+	if err != nil {
+		return err
+	}
+	now := d.clock()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.persist = p
+	for k, t := range loaded {
+		if now.Sub(t) <= d.Window {
+			d.seen[k] = t
+		}
+	}
+	return nil
 }
 
 // Seen reports whether (connID, key) was already seen within the window. On a
@@ -121,6 +155,11 @@ func (d *Deduper) Seen(connID, key string) bool {
 		return true
 	}
 	d.seen[id] = now
+	if d.persist != nil {
+		// Best-effort write-through; the in-memory set remains authoritative
+		// for this process, and the store re-prunes by window on load.
+		_ = d.persist.RecordDedup(id, now)
+	}
 	return false
 }
 

@@ -51,6 +51,10 @@ type Subscription struct {
 	ID             string
 	Tier           string
 	MaxConnections int
+	// OwnerID scopes the subscription (and its connections) to a tenant/user in
+	// the multi-tenant hosted deployment. Optional: the empty string is the
+	// default and preserves the original single-tenant behavior.
+	OwnerID string
 }
 
 // placeholderKeys are obvious not-yet-replaced values treated as a missing key
@@ -89,9 +93,21 @@ func (c *Connection) MapSymbol(source string) (BrokerSymbolSpec, bool) {
 	return spec, ok
 }
 
-// Store is an in-memory registry of connections and subscriptions plus a live
-// count of connected agents per subscription for concurrency enforcement
-// (FR-17, EC-14). It is safe for concurrent use.
+// ConfigPersister is an optional durable backing for a Store. When set, the
+// Store writes the full config snapshot through to it whenever a connection or
+// subscription is added, so the registry survives a restart. It is satisfied by
+// internal/store's file-backed Store. Defined here (rather than imported) to
+// keep the dependency pointing one way: store imports connection, never the
+// reverse.
+type ConfigPersister interface {
+	SaveConfig(conns []*Connection, subs []*Subscription) error
+}
+
+// Store is a registry of connections and subscriptions plus a live count of
+// connected agents per subscription for concurrency enforcement (FR-17, EC-14).
+// The registry itself can be made durable by attaching a ConfigPersister
+// (write-through); the live connected-agent set is intentionally never
+// persisted (it is reconstructed as agents reconnect). Safe for concurrent use.
 type Store struct {
 	mu            sync.Mutex
 	byKey         map[string]*Connection
@@ -99,6 +115,8 @@ type Store struct {
 	subscriptions map[string]*Subscription
 	// connected tracks currently-connected connection IDs per subscription.
 	connected map[string]map[string]bool
+	// persist, when non-nil, receives a full snapshot on every config change.
+	persist ConfigPersister
 }
 
 // NewStore returns an empty Store.
@@ -111,11 +129,56 @@ func NewStore() *Store {
 	}
 }
 
+// SetPersister attaches (or clears, with nil) a durable backing store. It does
+// not itself write anything; subsequent AddSubscription/AddConnection calls
+// write through. Callers load existing config first, then SetPersister, so the
+// initial load does not trigger redundant write-backs.
+func (s *Store) SetPersister(p ConfigPersister) {
+	s.mu.Lock()
+	s.persist = p
+	s.mu.Unlock()
+}
+
+// snapshotLocked collects all connections and subscriptions for persistence.
+// Caller holds s.mu.
+func (s *Store) snapshotLocked() ([]*Connection, []*Subscription) {
+	conns := make([]*Connection, 0, len(s.byID))
+	for _, c := range s.byID {
+		conns = append(conns, c)
+	}
+	subs := make([]*Subscription, 0, len(s.subscriptions))
+	for _, sub := range s.subscriptions {
+		subs = append(subs, sub)
+	}
+	return conns, subs
+}
+
+// Snapshot returns a point-in-time copy of the registry's connections and
+// subscriptions (used to persist a seed, and by observability/tests).
+func (s *Store) Snapshot() ([]*Connection, []*Subscription) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.snapshotLocked()
+}
+
+// persistLocked writes the current snapshot through to the durable backing, if
+// one is attached. Caller holds s.mu. A persistence error is intentionally
+// swallowed here (best-effort write-through); callers that need to surface it
+// use SaveConfig/Snapshot directly.
+func (s *Store) persistLocked() {
+	if s.persist == nil {
+		return
+	}
+	conns, subs := s.snapshotLocked()
+	_ = s.persist.SaveConfig(conns, subs)
+}
+
 // AddSubscription registers a subscription/plan.
 func (s *Store) AddSubscription(sub *Subscription) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.subscriptions[sub.ID] = sub
+	s.persistLocked()
 }
 
 // AddConnection registers a connection.
@@ -124,6 +187,7 @@ func (s *Store) AddConnection(c *Connection) {
 	defer s.mu.Unlock()
 	s.byKey[c.Key] = c
 	s.byID[c.ID] = c
+	s.persistLocked()
 }
 
 // Lookup finds a connection by its presented key (FR-2). Keys are portable, so
@@ -191,4 +255,71 @@ func (s *Store) ConnectedCount(subID string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.connected[subID])
+}
+
+// ConnectionByID returns the connection registered under id, if any. Unlike
+// Lookup (which is keyed by the portable connection key), this is keyed by the
+// stable connection ID used by the admin/provisioning API.
+func (s *Store) ConnectionByID(id string) (*Connection, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.byID[id]
+	return c, ok
+}
+
+// RemoveConnection removes a connection from the live registry by ID, freeing
+// any live connected slot it held and writing the change through to the durable
+// backing (if attached). Removing a connection takes effect immediately: its
+// key no longer authenticates on /webhook or the agent transport. Removing an
+// unknown ID is a no-op.
+func (s *Store) RemoveConnection(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.byID[id]
+	if !ok {
+		return
+	}
+	delete(s.byID, id)
+	delete(s.byKey, c.Key)
+	if set := s.connected[c.SubscriptionID]; set != nil {
+		delete(set, id)
+	}
+	s.persistLocked()
+}
+
+// ListConnections returns a snapshot slice of all registered connections.
+func (s *Store) ListConnections() []*Connection {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Connection, 0, len(s.byID))
+	for _, c := range s.byID {
+		out = append(out, c)
+	}
+	return out
+}
+
+// ListSubscriptions returns a snapshot slice of all registered subscriptions.
+func (s *Store) ListSubscriptions() []*Subscription {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Subscription, 0, len(s.subscriptions))
+	for _, sub := range s.subscriptions {
+		out = append(out, sub)
+	}
+	return out
+}
+
+// CountConnectionsForSubscription returns how many registered connections name
+// the given subscription ID. It counts the registry, not live-connected agents
+// (that is ConnectedCount), and backs the admin API's max_connections check.
+func (s *Store) CountConnectionsForSubscription(subID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, c := range s.byID {
+		if c.SubscriptionID == subID {
+			n++
+		}
+	}
+	return n
 }
