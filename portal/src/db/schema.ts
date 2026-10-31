@@ -116,6 +116,8 @@ export const subscriptions = pgTable(
     status: subscriptionStatusEnum("status").default("INCOMPLETE").notNull(),
     currentPeriodEnd: timestamp("current_period_end"),
     stripeSubscriptionId: text("stripe_subscription_id"),
+    /** The Stripe Customer this tenant's billing is attached to (reused across checkouts). */
+    stripeCustomerId: text("stripe_customer_id"),
     /** Mirrors the subscription id used in the relay admin API (owner_id scoping). */
     relaySubscriptionId: text("relay_subscription_id"),
     createdAt: createdAt(),
