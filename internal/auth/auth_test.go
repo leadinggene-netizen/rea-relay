@@ -56,6 +56,57 @@ func TestDeduperWindow(t *testing.T) {
 	}
 }
 
+// fakeDedupStore is an in-test DedupPersister that mimics the file store's
+// load/record behaviour without touching disk.
+type fakeDedupStore struct{ m map[string]time.Time }
+
+func (f *fakeDedupStore) LoadDedup() (map[string]time.Time, error) {
+	out := map[string]time.Time{}
+	for k, v := range f.m {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (f *fakeDedupStore) RecordDedup(key string, first time.Time) error {
+	if _, ok := f.m[key]; !ok {
+		f.m[key] = first
+	}
+	return nil
+}
+
+// TestDeduperPersistsAcrossRestart records a fresh key, then builds a new
+// Deduper over the same backing (a reboot) and confirms the key is still
+// suppressed within the window, while an aged-out entry is dropped on load.
+func TestDeduperPersistsAcrossRestart(t *testing.T) {
+	now := time.Unix(1000, 0)
+	store := &fakeDedupStore{m: map[string]time.Time{}}
+
+	d := NewDeduper(5 * time.Minute)
+	d.clock = func() time.Time { return now }
+	if err := d.AttachPersister(store); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	if d.Seen("c", "idem-1") {
+		t.Fatal("first sight should be fresh")
+	}
+	// A pre-existing aged entry also sits in the backing store.
+	store.m["c\x00idem-old"] = now.Add(-10 * time.Minute)
+
+	// Reboot: a brand-new Deduper over the same backing.
+	d2 := NewDeduper(5 * time.Minute)
+	d2.clock = func() time.Time { return now }
+	if err := d2.AttachPersister(store); err != nil {
+		t.Fatalf("attach2: %v", err)
+	}
+	if !d2.Seen("c", "idem-1") {
+		t.Fatal("key recorded before restart must still be suppressed (no re-execution)")
+	}
+	if d2.Seen("c", "idem-old") {
+		t.Fatal("aged-out key must be dropped on load, so a new instruction is fresh")
+	}
+}
+
 func TestRateLimiterSheds(t *testing.T) {
 	r := NewRateLimiter(1, 3) // burst 3
 	now := time.Unix(0, 0)

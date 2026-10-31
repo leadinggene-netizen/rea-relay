@@ -103,6 +103,14 @@ func (r *Relay) SetClock(f func() time.Time) {
 // Audit exposes the audit log.
 func (r *Relay) Audit() *AuditLog { return r.audit }
 
+// AttachDedupStore makes the relay's idempotency set durable by loading
+// surviving entries from p and recording future fresh keys write-through
+// (FR-4 across restarts). Entries older than the configured dedup window are
+// dropped on load. Call once at startup, after New.
+func (r *Relay) AttachDedupStore(p auth.DedupPersister) error {
+	return r.dedup.AttachPersister(p)
+}
+
 // ErrConnectionLimit is returned by RegisterAgent when the tier's concurrency
 // budget is exhausted (FR-17, EC-14, TC-X4).
 var ErrConnectionLimit = errors.New(string(reason.ConnectionLimit))
