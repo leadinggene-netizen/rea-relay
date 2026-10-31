@@ -73,19 +73,20 @@ export default async function PlansPage({
             {selectedPlan.maxConnections} concurrent connection
             {selectedPlan.maxConnections > 1 ? "s" : ""}.
           </p>
-          {/* Placeholder — Stripe checkout is wired in the next slice. */}
-          <button
-            type="button"
-            disabled
-            aria-disabled
-            className="mt-4 cursor-not-allowed rounded-lg bg-indigo-500/50 px-5 py-2.5 text-sm font-medium text-white/70"
-            title="Stripe checkout is wired in the next slice"
-          >
-            Continue to checkout →
-          </button>
+          {/* Posts to the checkout route, which creates a Stripe Checkout
+              session and 303-redirects to the hosted payment page. */}
+          <form method="POST" action="/api/billing/checkout" className="mt-4">
+            <input type="hidden" name="tier" value={selectedPlan.tier} />
+            <button
+              type="submit"
+              className="rounded-lg bg-indigo-500 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-400"
+            >
+              Continue to checkout →
+            </button>
+          </form>
           <p className="mt-2 text-xs text-white/40">
-            Checkout (Stripe) is coming in the next slice. Selecting a plan here
-            does not charge you.
+            You&apos;ll be redirected to Stripe&apos;s secure checkout to enter
+            payment details.
           </p>
         </div>
       )}
