@@ -1,0 +1,131 @@
+// Prisma schema for the rea-relay portal (control plane).
+//
+// Multi-tenant model: Tenant -> User, with Subscription (per Plan) and
+// Connection rows that mirror the Go relay's admin-API resources. A Connection
+// is the portal-side record of a hosted MT5 "cell"; `relayConnectionId` links
+// it to the connection the relay admin API provisions.
+//
+// NOTE: `prisma generate` and `prisma validate` need no database. A live
+// PostgreSQL (DATABASE_URL) is only required for `migrate` / `db push` / seed.
+
+generator client {
+  // The `prisma-client` generator uses the bundled WASM query compiler +
+  // driver adapters (no downloaded Rust engine binary), so `prisma generate`
+  // and `prisma validate` run offline. Pair with @prisma/adapter-pg at runtime.
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  runtime      = "nodejs"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// A customer organization. The unit of isolation for billing + provisioning.
+model Tenant {
+  id            String         @id @default(cuid())
+  name          String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  users         User[]
+  subscriptions Subscription[]
+  connections   Connection[]
+}
+
+/// A person who signs in. Belongs to exactly one Tenant.
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      Role     @default(MEMBER)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+/// A purchasable tier. Mirrors the incumbent's connection-count tiers.
+/// Prices are stored in cents to avoid float drift.
+model Plan {
+  id             String         @id @default(cuid())
+  tier           Tier           @unique
+  name           String
+  maxConnections Int
+  monthlyPrice   Int            // minor units (cents, USD)
+  stripePriceId  String?
+  active         Boolean        @default(true)
+  subscriptions  Subscription[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+/// A tenant's active (or lapsed) plan. One per billing relationship.
+model Subscription {
+  id                   String             @id @default(cuid())
+  tenantId             String
+  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planId               String
+  plan                 Plan               @relation(fields: [planId], references: [id])
+  status               SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodEnd     DateTime?
+  stripeSubscriptionId String?
+  /// Mirrors the subscription id used in the relay admin API (owner_id scoping).
+  relaySubscriptionId  String?
+  connections          Connection[]
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([tenantId])
+  @@index([planId])
+}
+
+/// A single hosted bridge cell. Counts against the plan's maxConnections.
+model Connection {
+  id                String           @id @default(cuid())
+  tenantId          String
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId    String
+  subscription      Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  /// The webhook key clients post to on the relay.
+  key               String           @unique
+  label             String
+  brokerServer      String?
+  status            ConnectionStatus @default(PENDING)
+  /// The connection id returned by the relay admin API once provisioned.
+  relayConnectionId String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@index([subscriptionId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum Tier {
+  STARTER
+  ADVANCED
+  PRO
+}
+
+enum SubscriptionStatus {
+  INCOMPLETE
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum ConnectionStatus {
+  PENDING
+  PROVISIONING
+  ACTIVE
+  PAUSED
+  ERROR
+}
