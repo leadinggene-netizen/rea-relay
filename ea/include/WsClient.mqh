@@ -64,17 +64,25 @@ bool CWsClient::Connect(const string host, const int port, const string path)
    m_port = port;
    m_sock = SocketCreate();
    if(m_sock == INVALID_HANDLE)
+   {
+      Print("WsClient: SocketCreate failed, err=", GetLastError());
       return false;
+   }
    if(!SocketConnect(m_sock, host, port, 5000))
    {
+      Print("WsClient: SocketConnect to ", host, ":", port, " failed, err=", GetLastError(),
+            " (4014=not allowed -> add host to Allow WebRequest list; 5272=cannot connect)");
       Close();
       return false;
    }
    if(!SocketTlsHandshake(m_sock, host))
    {
+      Print("WsClient: SocketTlsHandshake(", host, ") failed, err=", GetLastError(),
+            " (5274=handshake failed; 5275=no certificate)");
       Close();
       return false;
    }
+   Print("WsClient: TCP+TLS established to ", host, ":", port);
 
    // --- RFC 6455 client handshake ---
    uchar nonce[16];
@@ -94,6 +102,7 @@ bool CWsClient::Connect(const string host, const int port, const string path)
    AppendStringBytes(reqb, req);
    if(!TlsSendAll(reqb))
    {
+      Print("WsClient: sending WS upgrade request failed, err=", GetLastError());
       Close();
       return false;
    }
@@ -105,6 +114,8 @@ bool CWsClient::Connect(const string host, const int port, const string path)
    {
       if(GetTickCount() - start > 5000)
       {
+         Print("WsClient: timeout waiting for upgrade response; got so far: [",
+               StringSubstr(resp, 0, 120), "]");
          Close();
          return false;
       }
@@ -119,9 +130,11 @@ bool CWsClient::Connect(const string host, const int port, const string path)
    }
    if(StringFind(resp, " 101 ") < 0)
    {
+      Print("WsClient: unexpected handshake response: [", StringSubstr(resp, 0, 160), "]");
       Close();
       return false;
    }
+   Print("WsClient: WebSocket handshake OK (101)");
    m_connected = true;
    return true;
 }
