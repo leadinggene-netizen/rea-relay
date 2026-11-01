@@ -2,7 +2,7 @@
  * Plan catalog + pricing helpers (pure logic — unit tested, no I/O).
  *
  * These definitions are the single source of truth for the marketing pricing
- * table AND the Prisma seed. Prices are deliberately set BELOW the incumbent
+ * table AND the Drizzle seed. Prices are deliberately set BELOW the incumbent
  * (PineConnector-style tiers at ~$39 / $79 / $159 per month) to undercut it.
  *
  * TODO(pricing): these are placeholder competitive prices — revisit before

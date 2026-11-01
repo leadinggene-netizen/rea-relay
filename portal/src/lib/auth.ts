@@ -11,7 +11,7 @@
  *
  * Session strategy is JWT (no database adapter), so authentication needs no
  * live Postgres — the build and unit tests pass without one. Tenant/role is
- * carried on the token. The Prisma models exist for the persistence slice.
+ * carried on the token. The Drizzle models exist for the persistence slice.
  */
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
