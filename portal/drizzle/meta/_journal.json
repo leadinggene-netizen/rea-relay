@@ -15,6 +15,13 @@
       "when": 1793490713896,
       "tag": "0001_add_stripe_customer_id",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793578125067,
+      "tag": "0002_stiff_praxagora",
+      "breakpoints": true
     }
   ]
 }

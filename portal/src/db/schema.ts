@@ -156,6 +156,23 @@ export const connections = pgTable(
   ],
 );
 
+/**
+ * Encrypted broker credentials for a Connection. One row per Connection (PK ==
+ * FK), deleted automatically when the Connection is removed. The plaintext
+ * cred is never stored — only AES-256-GCM ciphertext/iv/authTag (all base64).
+ * Written/read exclusively via `src/lib/secrets.ts` (LocalSecretStore).
+ */
+export const brokerSecrets = pgTable("BrokerSecret", {
+  connectionId: text("connection_id")
+    .primaryKey()
+    .references(() => connections.id, { onDelete: "cascade" }),
+  ciphertext: text("ciphertext").notNull(),
+  iv: text("iv").notNull(),
+  authTag: text("auth_tag").notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
 // --- Relations ---------------------------------------------------------------
 
 export const tenantsRelations = relations(tenants, ({ many }) => ({
@@ -199,6 +216,17 @@ export const connectionsRelations = relations(connections, ({ one }) => ({
     fields: [connections.subscriptionId],
     references: [subscriptions.id],
   }),
+  brokerSecret: one(brokerSecrets, {
+    fields: [connections.id],
+    references: [brokerSecrets.connectionId],
+  }),
+}));
+
+export const brokerSecretsRelations = relations(brokerSecrets, ({ one }) => ({
+  connection: one(connections, {
+    fields: [brokerSecrets.connectionId],
+    references: [connections.id],
+  }),
 }));
 
 // --- Inferred types (replace the generated Prisma model types) ---------------
@@ -213,6 +241,8 @@ export type Subscription = typeof subscriptions.$inferSelect;
 export type NewSubscription = typeof subscriptions.$inferInsert;
 export type Connection = typeof connections.$inferSelect;
 export type NewConnection = typeof connections.$inferInsert;
+export type BrokerSecret = typeof brokerSecrets.$inferSelect;
+export type NewBrokerSecret = typeof brokerSecrets.$inferInsert;
 
 export type Role = (typeof roleEnum.enumValues)[number];
 export type Tier = (typeof tierEnum.enumValues)[number];
