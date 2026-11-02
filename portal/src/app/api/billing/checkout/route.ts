@@ -13,20 +13,11 @@ import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { buildCheckoutSessionParams } from "@/lib/billing";
 import { DrizzleSubscriptionStore } from "@/lib/billing-store";
 import { getPlan } from "@/lib/plans";
+import { ensureTenantForUser } from "@/lib/tenant";
 
 // Never prerendered; talks to Stripe per request.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/**
- * Stand-in tenant resolution until the persistence slice wires real
- * user→tenant lookup. Mirrors the dashboard's ownerId derivation.
- */
-function resolveTenantId(session: {
-  user?: { id?: string; email?: string | null };
-}): string | null {
-  return session.user?.id ?? session.user?.email ?? null;
-}
 
 async function readTier(req: NextRequest): Promise<string | null> {
   const contentType = req.headers.get("content-type") ?? "";
@@ -58,10 +49,18 @@ export async function POST(req: NextRequest) {
   }
 
   const session = await auth();
-  const tenantId = session ? resolveTenantId(session) : null;
-  if (!tenantId) {
+  const email = session?.user?.email;
+  if (!email) {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
+
+  // Resolve (or lazily create) the real tenant for this user, so the Stripe
+  // metadata carries a tenant id that genuinely exists — the webhook's FK then
+  // resolves against a real Tenant row (no dev shim needed).
+  const { tenantId } = await ensureTenantForUser(
+    email,
+    session.user?.name ?? undefined,
+  );
 
   const rawTier = await readTier(req);
   const plan = rawTier ? getPlan(rawTier) : undefined;

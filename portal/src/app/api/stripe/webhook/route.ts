@@ -15,6 +15,7 @@ import type Stripe from "stripe";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { handleStripeWebhookEvent } from "@/lib/billing";
 import { DrizzleSubscriptionStore } from "@/lib/billing-store";
+import { provisionOnActivation } from "@/lib/provisioning";
 
 // Raw body + no caching: required for signature verification.
 export const runtime = "nodejs";
@@ -55,6 +56,12 @@ export async function POST(req: NextRequest) {
   try {
     const { handled } = await handleStripeWebhookEvent(event, {
       store: new DrizzleSubscriptionStore(),
+      // Fire-and-log: provisioning talks to the relay, which must not block or
+      // fail the webhook's 200. provisionOnActivation catches and logs its own
+      // errors, so a provisioning hiccup never makes Stripe retry the event.
+      onActivated: (tenantId, subscriptionId) => {
+        void provisionOnActivation(tenantId, subscriptionId);
+      },
     });
     return NextResponse.json({ received: true, handled });
   } catch (err) {
